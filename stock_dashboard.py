@@ -1,54 +1,23 @@
+
+
 import streamlit as st
 import requests
 import pandas as pd
 
-FMP_API_KEY = "eLZVIiG9DSAFlfqQ48Q7vxcfIDF3lFv2"  # 🔁 Replace with your actual FMP API key
-BASE_URL = "https://financialmodelingprep.com/api/v3"
+# 👉 Replace with your actual FMP API key
+API_KEY = "eLZVIiG9DSAFlfqQ48Q7vxcfIDF3lFv2"
 
-st.set_page_config(page_title="Top Stocks Analyzer (FMP)", layout="wide")
-st.title("📊 Top Stocks Analyzer (via Financial Modeling Prep API)")
+# Top stock tickers (customizable)
+DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "BRK.B", "UNH", "JNJ"]
 
-def get_top_10_stocks():
-    # Example: get largest market cap stocks (you can use other endpoints too)
-    url = f"{BASE_URL}/stock-screener?limit=10&exchange=NASDAQ&apikey={FMP_API_KEY}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return [stock['symbol'] for stock in response.json()]
-    return []
-
-def fetch_metrics(ticker):
+# Safe value formatter
+def safe_format(val, fmt):
     try:
-        profile_url = f"{BASE_URL}/profile/{ticker}?apikey={FMP_API_KEY}"
-        ratios_url = f"{BASE_URL}/ratios-ttm/{ticker}?apikey={FMP_API_KEY}"
+        return fmt.format(val)
+    except:
+        return "N/A"
 
-        profile_resp = requests.get(profile_url)
-        ratios_resp = requests.get(ratios_url)
-
-        if profile_resp.status_code != 200 or ratios_resp.status_code != 200:
-            raise Exception("API call failed")
-
-        profile = profile_resp.json()[0]
-        ratios = ratios_resp.json()[0]
-
-        return {
-            'Ticker': ticker,
-            'Company': profile.get('companyName'),
-            'Market Cap': profile.get('mktCap'),
-            'PE Ratio': ratios.get('peRatioTTM'),
-            'EPS': profile.get('eps'),
-            'P/B Ratio': ratios.get('priceToBookRatioTTM'),
-            'Dividend Yield': ratios.get('dividendYieldTTM') * 100 if ratios.get('dividendYieldTTM') else 0,
-            'ROE': ratios.get('returnOnEquityTTM') * 100 if ratios.get('returnOnEquityTTM') else 0,
-            'Debt to Equity': ratios.get('debtEquityRatioTTM'),
-            'Price/Sales': ratios.get('priceToSalesRatioTTM'),
-            'Operating Margin': ratios.get('operatingProfitMarginTTM') * 100 if ratios.get('operatingProfitMarginTTM') else 0,
-            'EV/EBITDA': ratios.get('evToEbitdaTTM'),
-            'FCF Margin': ratios.get('freeCashFlowMarginTTM') * 100 if ratios.get('freeCashFlowMarginTTM') else 0
-        }
-    except Exception as e:
-        st.warning(f"⚠️ Failed to fetch {ticker}: {e}")
-        return None
-
+# Scoring logic for stocks
 def score_stock(row):
     score = 0
     try:
@@ -77,43 +46,68 @@ def score_stock(row):
     except: pass
     return score
 
+# Fetch financials for one stock
+def fetch_stock_data(symbol):
+    base = "https://financialmodelingprep.com/api/v3"
+    try:
+        quote = requests.get(f"{base}/quote/{symbol}?apikey={API_KEY}").json()[0]
+        profile = requests.get(f"{base}/profile/{symbol}?apikey={API_KEY}").json()[0]
+        key_metrics = requests.get(f"{base}/key-metrics-ttm/{symbol}?apikey={API_KEY}").json()[0]
+        ratios = requests.get(f"{base}/ratios-ttm/{symbol}?apikey={API_KEY}").json()[0]
 
-# --- Main logic ---
-tickers = get_top_10_stocks()
-if not tickers:
-    st.error("❌ Could not fetch top stocks. Check your FMP API key or quota.")
+        return {
+            "Ticker": symbol,
+            "Price": quote.get("price"),
+            "Market Cap": quote.get("marketCap"),
+            "PE Ratio": key_metrics.get("peRatio"),
+            "EPS": key_metrics.get("eps"),
+            "P/B Ratio": key_metrics.get("pbRatio"),
+            "Dividend Yield": key_metrics.get("dividendYield") * 100 if key_metrics.get("dividendYield") else None,
+            "ROE": ratios.get("returnOnEquity") * 100 if ratios.get("returnOnEquity") else None,
+            "Debt to Equity": ratios.get("debtEquityRatio"),
+            "P/S Ratio": key_metrics.get("priceToSalesRatio"),
+            "EV/EBITDA": key_metrics.get("enterpriseValueOverEBITDA"),
+            "Operating Margin": ratios.get("operatingProfitMargin") * 100 if ratios.get("operatingProfitMargin") else None,
+            "FCF Margin": ratios.get("freeCashFlowMargin") * 100 if ratios.get("freeCashFlowMargin") else None,
+        }
+    except Exception as e:
+        st.warning(f"⚠️ Error fetching {symbol}: {e}")
+        return None
+
+# Streamlit App
+st.title("📈 Stock Fundamentals Analyzer")
+
+tickers = st.text_input("Enter comma-separated stock tickers:", ",".join(DEFAULT_TICKERS))
+tickers = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+
+with st.spinner("Fetching stock data..."):
+    data = [fetch_stock_data(t) for t in tickers]
+    data = [d for d in data if d]  # remove failed entries
+
+if not data:
+    st.error("❌ No stock data could be loaded. Please check your internet connection or API key.")
     st.stop()
 
-st.subheader("Top 10 Stocks:")
-st.write(tickers)
+df = pd.DataFrame(data)
+df["Score"] = df.apply(score_stock, axis=1)
+df = df.sort_values(by="Score", ascending=False)
 
-stock_data = []
-for ticker in tickers:
-    data = fetch_metrics(ticker)
-    if data:
-        stock_data.append(data)
+# Format numeric fields safely
+df["Dividend Yield"] = df["Dividend Yield"].apply(lambda x: safe_format(x, "{:.2f}%"))
+df["ROE"] = df["ROE"].apply(lambda x: safe_format(x, "{:.2f}%"))
+df["Debt to Equity"] = df["Debt to Equity"].apply(lambda x: safe_format(x, "{:.2f}"))
+df["PE Ratio"] = df["PE Ratio"].apply(lambda x: safe_format(x, "{:.2f}"))
+df["P/B Ratio"] = df["P/B Ratio"].apply(lambda x: safe_format(x, "{:.2f}"))
+df["P/S Ratio"] = df["P/S Ratio"].apply(lambda x: safe_format(x, "{:.2f}"))
+df["EV/EBITDA"] = df["EV/EBITDA"].apply(lambda x: safe_format(x, "{:.2f}"))
+df["Operating Margin"] = df["Operating Margin"].apply(lambda x: safe_format(x, "{:.2f}%"))
+df["FCF Margin"] = df["FCF Margin"].apply(lambda x: safe_format(x, "{:.2f}%"))
+df["Market Cap"] = df["Market Cap"].apply(lambda x: safe_format(x, "{:,.0f}"))
+df["Price"] = df["Price"].apply(lambda x: safe_format(x, "${:.2f}"))
+df["EPS"] = df["EPS"].apply(lambda x: safe_format(x, "{:.2f}"))
 
-df = pd.DataFrame(stock_data)
-if df.empty:
-    st.error("❌ No valid stock data retrieved.")
-    st.stop()
+st.success(f"✅ Analyzed {len(df)} stocks.")
+st.dataframe(df, use_container_width=True)
 
-df['Score'] = df.apply(score_stock, axis=1)
-df = df.sort_values(by='Score', ascending=False)
-
-st.success("✅ Top Stocks by Fundamentals:")
-st.dataframe(df.style.format({
-    'Dividend Yield': '{:.2f}%',
-    'ROE': '{:.2f}%',
-    'Operating Margin': '{:.2f}%',
-    'FCF Margin': '{:.2f}%',
-    'PE Ratio': '{:.2f}',
-    'P/B Ratio': '{:.2f}',
-    'Price/Sales': '{:.2f}',
-    'EV/EBITDA': '{:.2f}',
-    'EPS': '{:.2f}',
-    'Debt to Equity': '{:.2f}',
-    'Market Cap': '{:,.0f}',
-}))
-
-st.download_button("📥 Download CSV", data=df.to_csv(index=False), file_name="top_stocks_fmp.csv")
+# Download button
+st.download_button("📥 Download CSV", df.to_csv(index=False), "stock_analysis.csv")
