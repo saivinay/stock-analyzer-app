@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 
 # Replace with your actual FMP API key
-API_KEY = "YOUR_FMP_API_KEY"
+API_KEY = "eLZVIiG9DSAFlfqQ48Q7vxcfIDF3lFv2"
 
 # Default list of stock tickers
 DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "BRK.B", "UNH", "JNJ"]
