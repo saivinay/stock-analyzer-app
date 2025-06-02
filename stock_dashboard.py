@@ -51,15 +51,32 @@ def fetch_metrics(ticker):
 
 def score_stock(row):
     score = 0
-    if 0 < row['PE Ratio'] < 20: score += 1
-    if 0 < row['P/B Ratio'] < 3: score += 1
-    if row['Dividend Yield'] > 0: score += 1
-    if row['ROE'] > 10: score += 1
-    if row['Debt to Equity'] < 1: score += 1
-    if row['EPS'] > 0: score += 1
-    if row['Operating Margin'] > 0: score += 1
-    if row['FCF Margin'] > 0: score += 1
+    try:
+        if 0 < float(row['PE Ratio']) < 20: score += 1
+    except: pass
+    try:
+        if 0 < float(row['P/B Ratio']) < 3: score += 1
+    except: pass
+    try:
+        if float(row['Dividend Yield']) > 0: score += 1
+    except: pass
+    try:
+        if float(row['ROE']) > 10: score += 1
+    except: pass
+    try:
+        if float(row['Debt to Equity']) < 1: score += 1
+    except: pass
+    try:
+        if float(row['EPS']) > 0: score += 1
+    except: pass
+    try:
+        if float(row['Operating Margin']) > 0: score += 1
+    except: pass
+    try:
+        if float(row['FCF Margin']) > 0: score += 1
+    except: pass
     return score
+
 
 # --- Main logic ---
 tickers = get_top_10_stocks()
