@@ -1,102 +1,102 @@
 import streamlit as st
-import yfinance as yf
+import requests
 import pandas as pd
 
-# Set page configuration
-st.set_page_config(page_title="Top Stocks Analyzer", layout="wide")
+FMP_API_KEY = "eLZVIiG9DSAFlfqQ48Q7vxcfIDF3lFv2"  # 🔁 Replace with your actual FMP API key
+BASE_URL = "https://financialmodelingprep.com/api/v3"
 
-# --- Custom stock scoring function ---
-def score_stock(row):
-    score = 0
-    try:
-        if row['PE Ratio'] > 0 and row['PE Ratio'] < 20:
-            score += 1
-        if row['P/B Ratio'] > 0 and row['P/B Ratio'] < 3:
-            score += 1
-        if row['Dividend Yield'] > 0:
-            score += 1
-        if row['ROE'] > 10:
-            score += 1
-        if row['Debt to Equity'] < 1:
-            score += 1
-        if row['EPS'] > 0:
-            score += 1
-        if row['Operating Margin'] > 0:
-            score += 1
-        if row['FCF'] > 0:
-            score += 1
-    except:
-        pass
-    return score
+st.set_page_config(page_title="Top Stocks Analyzer (FMP)", layout="wide")
+st.title("📊 Top Stocks Analyzer (via Financial Modeling Prep API)")
 
-# --- Simulate top 10 tickers (can be replaced with live logic) ---
-def get_top_10_tickers():
-    return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B', 'UNH', 'JNJ']
+def get_top_10_stocks():
+    # Example: get largest market cap stocks (you can use other endpoints too)
+    url = f"{BASE_URL}/stock-screener?limit=10&exchange=NASDAQ&apikey={FMP_API_KEY}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return [stock['symbol'] for stock in response.json()]
+    return []
 
-# --- Pull metrics for a single ticker ---
 def fetch_metrics(ticker):
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
+        profile_url = f"{BASE_URL}/profile/{ticker}?apikey={FMP_API_KEY}"
+        ratios_url = f"{BASE_URL}/ratios-ttm/{ticker}?apikey={FMP_API_KEY}"
+
+        profile_resp = requests.get(profile_url)
+        ratios_resp = requests.get(ratios_url)
+
+        if profile_resp.status_code != 200 or ratios_resp.status_code != 200:
+            raise Exception("API call failed")
+
+        profile = profile_resp.json()[0]
+        ratios = ratios_resp.json()[0]
 
         return {
             'Ticker': ticker,
-            'PE Ratio': info.get('trailingPE', None),
-            'EPS': info.get('trailingEps', None),
-            'P/B Ratio': info.get('priceToBook', None),
-            'Dividend Yield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
-            'ROE': info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0,
-            'Debt to Equity': info.get('debtToEquity', None),
-            'Market Cap': info.get('marketCap', None),
-            'Price/Sales': info.get('priceToSalesTrailing12Months', None),
-            'FCF': info.get('freeCashflow', None),
-            'EV/EBITDA': info.get('enterpriseToEbitda', None),
-            'Operating Margin': info.get('operatingMargins', 0) * 100 if info.get('operatingMargins') else 0
+            'Company': profile.get('companyName'),
+            'Market Cap': profile.get('mktCap'),
+            'PE Ratio': ratios.get('peRatioTTM'),
+            'EPS': profile.get('eps'),
+            'P/B Ratio': ratios.get('priceToBookRatioTTM'),
+            'Dividend Yield': ratios.get('dividendYieldTTM') * 100 if ratios.get('dividendYieldTTM') else 0,
+            'ROE': ratios.get('returnOnEquityTTM') * 100 if ratios.get('returnOnEquityTTM') else 0,
+            'Debt to Equity': ratios.get('debtEquityRatioTTM'),
+            'Price/Sales': ratios.get('priceToSalesRatioTTM'),
+            'Operating Margin': ratios.get('operatingProfitMarginTTM') * 100 if ratios.get('operatingProfitMarginTTM') else 0,
+            'EV/EBITDA': ratios.get('evToEbitdaTTM'),
+            'FCF Margin': ratios.get('freeCashFlowMarginTTM') * 100 if ratios.get('freeCashFlowMarginTTM') else 0
         }
     except Exception as e:
-        st.warning(f"Error fetching {ticker}: {e}")
+        st.warning(f"⚠️ Failed to fetch {ticker}: {e}")
         return None
 
-# --- Main logic ---
-st.title("📈 Top 10 Stock Analyzer")
+def score_stock(row):
+    score = 0
+    if 0 < row['PE Ratio'] < 20: score += 1
+    if 0 < row['P/B Ratio'] < 3: score += 1
+    if row['Dividend Yield'] > 0: score += 1
+    if row['ROE'] > 10: score += 1
+    if row['Debt to Equity'] < 1: score += 1
+    if row['EPS'] > 0: score += 1
+    if row['Operating Margin'] > 0: score += 1
+    if row['FCF Margin'] > 0: score += 1
+    return score
 
-tickers = get_top_10_tickers()
-st.subheader("Analyzing Top Tickers:")
+# --- Main logic ---
+tickers = get_top_10_stocks()
+if not tickers:
+    st.error("❌ Could not fetch top stocks. Check your FMP API key or quota.")
+    st.stop()
+
+st.subheader("Top 10 Stocks:")
 st.write(tickers)
 
-metrics = []
+stock_data = []
 for ticker in tickers:
     data = fetch_metrics(ticker)
     if data:
-        metrics.append(data)
+        stock_data.append(data)
 
-# Convert to DataFrame
-df = pd.DataFrame(metrics)
-
-# Handle empty DataFrame
-if df.empty or df.isnull().all(axis=1).all():
-    st.error("❌ No stock data could be loaded. Please check your internet connection or data source.")
+df = pd.DataFrame(stock_data)
+if df.empty:
+    st.error("❌ No valid stock data retrieved.")
     st.stop()
 
-# Apply scoring
 df['Score'] = df.apply(score_stock, axis=1)
-
-# Sort by score
 df = df.sort_values(by='Score', ascending=False)
 
-# Show results
-st.success("✅ Top Stocks Based on Fundamentals:")
+st.success("✅ Top Stocks by Fundamentals:")
 st.dataframe(df.style.format({
     'Dividend Yield': '{:.2f}%',
     'ROE': '{:.2f}%',
     'Operating Margin': '{:.2f}%',
+    'FCF Margin': '{:.2f}%',
     'PE Ratio': '{:.2f}',
     'P/B Ratio': '{:.2f}',
     'Price/Sales': '{:.2f}',
     'EV/EBITDA': '{:.2f}',
     'EPS': '{:.2f}',
     'Debt to Equity': '{:.2f}',
+    'Market Cap': '{:,.0f}',
 }))
 
-# Optional CSV export
-st.download_button("📥 Download Results as CSV", data=df.to_csv(index=False), file_name="top_stocks.csv")
+st.download_button("📥 Download CSV", data=df.to_csv(index=False), file_name="top_stocks_fmp.csv")
