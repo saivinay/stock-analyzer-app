@@ -1,85 +1,102 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Top Stock Analyzer", layout="wide")
+# Set page configuration
+st.set_page_config(page_title="Top Stocks Analyzer", layout="wide")
 
-@st.cache_data(ttl=3600)
-def get_top_10_stocks():
-    url = "https://finance.yahoo.com/screener/predefined/most_actives"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.text, 'lxml')
-    table = soup.find('table', {'class': 'W(100%)'})
-
-    tickers = []
-    if table:
-        rows = table.find_all('tr')[1:11]
-        for row in rows:
-            symbol = row.find('td').text.strip()
-            tickers.append(symbol)
-    return tickers
-
-def fetch_stock_metrics(ticker):
-    stock = yf.Ticker(ticker)
-    info = stock.info
-    cashflow = stock.cashflow
-
-    try:
-        return {
-            'Ticker': ticker,
-            'Company': info.get('shortName'),
-            'Market Cap': info.get('marketCap'),
-            'P/E Ratio': info.get('trailingPE'),
-            'EPS': info.get('trailingEps'),
-            'P/B Ratio': info.get('priceToBook'),
-            'Dividend Yield (%)': (info.get('dividendYield') or 0) * 100,
-            'ROE (%)': (info.get('returnOnEquity') or 0) * 100,
-            'Debt/Equity': info.get('debtToEquity'),
-            'P/S Ratio': info.get('priceToSalesTrailing12Months'),
-            'Operating Margin (%)': (info.get('operatingMargins') or 0) * 100,
-            'EV/EBITDA': info.get('enterpriseToEbitda'),
-            'Free Cash Flow': (
-                cashflow.loc['Total Cash From Operating Activities'][0]
-                - cashflow.loc['Capital Expenditures'][0]
-                if 'Total Cash From Operating Activities' in cashflow.index and 'Capital Expenditures' in cashflow.index
-                else None
-            ),
-            'Earnings Yield (%)': (
-                (info['trailingEps'] / info['currentPrice']) * 100
-                if info.get('trailingEps') and info.get('currentPrice') else None
-            )
-        }
-    except Exception:
-        return {'Ticker': ticker, 'Error': 'Data fetch error'}
-
+# --- Custom stock scoring function ---
 def score_stock(row):
     score = 0
-    if row['P/E Ratio'] and row['P/E Ratio'] < 20: score += 1
-    if row['P/B Ratio'] and row['P/B Ratio'] < 3: score += 1
-    if row['P/S Ratio'] and row['P/S Ratio'] < 2: score += 1
-    if row['EV/EBITDA'] and row['EV/EBITDA'] < 10: score += 1
-    if row['Earnings Yield (%)'] and row['Earnings Yield (%)'] > 5: score += 1
-    if row['ROE (%)'] and row['ROE (%)'] > 15: score += 1
-    if row['Operating Margin (%)'] and row['Operating Margin (%)'] > 10: score += 1
-    if row['Debt/Equity'] and row['Debt/Equity'] < 1: score += 1
-    if row['Free Cash Flow'] and row['Free Cash Flow'] > 0: score += 1
+    try:
+        if row['PE Ratio'] > 0 and row['PE Ratio'] < 20:
+            score += 1
+        if row['P/B Ratio'] > 0 and row['P/B Ratio'] < 3:
+            score += 1
+        if row['Dividend Yield'] > 0:
+            score += 1
+        if row['ROE'] > 10:
+            score += 1
+        if row['Debt to Equity'] < 1:
+            score += 1
+        if row['EPS'] > 0:
+            score += 1
+        if row['Operating Margin'] > 0:
+            score += 1
+        if row['FCF'] > 0:
+            score += 1
+    except:
+        pass
     return score
 
-st.title("📈 Top 10 Active Stocks Analyzer")
-tickers = get_top_10_stocks()
+# --- Simulate top 10 tickers (can be replaced with live logic) ---
+def get_top_10_tickers():
+    return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B', 'UNH', 'JNJ']
 
-with st.spinner("Fetching financial data..."):
-    data = [fetch_stock_metrics(t) for t in tickers]
-    df = pd.DataFrame(data)
-    df['Score'] = df.apply(score_stock, axis=1)
-    df = df.sort_values(by='Score', ascending=False)
+# --- Pull metrics for a single ticker ---
+def fetch_metrics(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-st.success("Analysis Complete!")
+        return {
+            'Ticker': ticker,
+            'PE Ratio': info.get('trailingPE', None),
+            'EPS': info.get('trailingEps', None),
+            'P/B Ratio': info.get('priceToBook', None),
+            'Dividend Yield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
+            'ROE': info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0,
+            'Debt to Equity': info.get('debtToEquity', None),
+            'Market Cap': info.get('marketCap', None),
+            'Price/Sales': info.get('priceToSalesTrailing12Months', None),
+            'FCF': info.get('freeCashflow', None),
+            'EV/EBITDA': info.get('enterpriseToEbitda', None),
+            'Operating Margin': info.get('operatingMargins', 0) * 100 if info.get('operatingMargins') else 0
+        }
+    except Exception as e:
+        st.warning(f"Error fetching {ticker}: {e}")
+        return None
 
-st.subheader("📊 Ranked Stocks by Score")
-st.dataframe(df[['Ticker', 'Company', 'Score'] + [col for col in df.columns if col not in ['Ticker', 'Company', 'Score']]], height=500)
+# --- Main logic ---
+st.title("📈 Top 10 Stock Analyzer")
 
-st.download_button("⬇ Download CSV", df.to_csv(index=False), "top_stocks.csv", "text/csv")
+tickers = get_top_10_tickers()
+st.subheader("Analyzing Top Tickers:")
+st.write(tickers)
+
+metrics = []
+for ticker in tickers:
+    data = fetch_metrics(ticker)
+    if data:
+        metrics.append(data)
+
+# Convert to DataFrame
+df = pd.DataFrame(metrics)
+
+# Handle empty DataFrame
+if df.empty or df.isnull().all(axis=1).all():
+    st.error("❌ No stock data could be loaded. Please check your internet connection or data source.")
+    st.stop()
+
+# Apply scoring
+df['Score'] = df.apply(score_stock, axis=1)
+
+# Sort by score
+df = df.sort_values(by='Score', ascending=False)
+
+# Show results
+st.success("✅ Top Stocks Based on Fundamentals:")
+st.dataframe(df.style.format({
+    'Dividend Yield': '{:.2f}%',
+    'ROE': '{:.2f}%',
+    'Operating Margin': '{:.2f}%',
+    'PE Ratio': '{:.2f}',
+    'P/B Ratio': '{:.2f}',
+    'Price/Sales': '{:.2f}',
+    'EV/EBITDA': '{:.2f}',
+    'EPS': '{:.2f}',
+    'Debt to Equity': '{:.2f}',
+}))
+
+# Optional CSV export
+st.download_button("📥 Download Results as CSV", data=df.to_csv(index=False), file_name="top_stocks.csv")
