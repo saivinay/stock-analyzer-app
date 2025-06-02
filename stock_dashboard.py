@@ -1,3 +1,4 @@
+#https://stock-analyzer-app-9vh6yyr6zxycd8lsh4udyf.streamlit.app
 import streamlit as st
 import requests
 import pandas as pd
